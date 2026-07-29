@@ -12,7 +12,7 @@ if (!fs.existsSync("hls")) {
 
 // Inicia o FFmpeg dentro do Railway
 const ffmpegCommand = `
-ffmpeg -i https://streaming.live365.com/a12345  \
+ffmpeg -i https://24403.live.streamtheworld.com/ATL_CHAAAC.aac  \
   -c:a aac -b:a 128k \
   -f hls \
   -hls_time 2 \
