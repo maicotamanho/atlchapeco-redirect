@@ -7,12 +7,16 @@ const port = process.env.PORT || 3000;
 
 const HLS_DIR = "/app/hls";
 
+// Garante que a pasta HLS existe
 if (!fs.existsSync(HLS_DIR)) {
   fs.mkdirSync(HLS_DIR, { recursive: true });
   console.log("Pasta /app/hls criada");
 }
 
-// Inicia o servidor primeiro
+// URL REAL da Atlântida Chapecó
+const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
+
+// Inicia o servidor primeiro (Railway exige isso)
 app.use("/radio", express.static(HLS_DIR));
 
 app.get("/", (req, res) => {
@@ -29,8 +33,6 @@ app.listen(port, () => {
 function iniciarFFmpeg() {
   console.log("Iniciando FFmpeg em background...");
 
-  const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
-
   const ffmpeg = spawn("ffmpeg", [
     "-i", STREAM_URL,
     "-c:a", "aac",
@@ -42,7 +44,7 @@ function iniciarFFmpeg() {
     `${HLS_DIR}/index.m3u8`
   ], {
     detached: true,
-    stdio: ["ignore", "ignore", "ignore"] // NADA de logs
+    stdio: ["ignore", "ignore", "ignore"] // evita travar o Railway
   });
 
   ffmpeg.unref();
