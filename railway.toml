@@ -1,0 +1,8 @@
+[build]
+nixpacks = true
+
+[deploy]
+start = "node server.js"
+
+[variables]
+FFMPEG = "apt-get update && apt-get install -y ffmpeg"
