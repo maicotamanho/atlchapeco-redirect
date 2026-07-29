@@ -3,13 +3,12 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 
 const app = express();
-const port = process.env.PORT; // OBRIGATÓRIO no Railway
+const port = 3000; // FIXO porque você usa Dockerfile
 
 const HLS_DIR = "/app/hls";
 
 if (!fs.existsSync(HLS_DIR)) {
   fs.mkdirSync(HLS_DIR, { recursive: true });
-  console.log("Pasta /app/hls criada");
 }
 
 const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
@@ -26,8 +25,6 @@ app.listen(port, () => {
 });
 
 function iniciarFFmpeg() {
-  console.log("Iniciando FFmpeg em background...");
-
   const ffmpeg = spawn("ffmpeg", [
     "-i", STREAM_URL,
     "-c:a", "aac",
