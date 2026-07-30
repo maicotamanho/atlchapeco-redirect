@@ -46,7 +46,7 @@ function criarPlaceholder() {
 
 // ---------------- OUVINTES POR USER-AGENT ----------------
 
-let ouvintes = new Map(); // userAgent -> timestamp
+let ouvintes = new Map();
 
 app.use("/radio", (req, res, next) => {
   const ua = req.headers["user-agent"] || "desconhecido";
@@ -59,14 +59,14 @@ setInterval(() => {
   const agora = Date.now();
 
   for (const [ua, last] of ouvintes.entries()) {
-    if (agora - last > 15000) { // 15s sem pedir ts = saiu
+    if (agora - last > 15000) {
       ouvintes.delete(ua);
     }
   }
 
   console.log("Ouvintes reais:", ouvintes.size);
 
-  controlarRelay(); // liga/desliga automaticamente
+  controlarRelay();
 }, 5000);
 
 // ---------------- SERVE HLS ----------------
@@ -86,11 +86,13 @@ function ligarRelay() {
   if (relayLigado) return;
 
   limparHLS();
-  criarPlaceholder(); // evita erro na primeira tentativa
+  criarPlaceholder();
 
   console.log("Ligando FFmpeg Relay (há ouvintes)...");
 
   ffmpegRelay = spawn("ffmpeg", [
+    "-probesize", "5000000",
+    "-analyzeduration", "5000000",
     "-reconnect", "1",
     "-reconnect_streamed", "1",
     "-reconnect_delay_max", "5",
@@ -178,12 +180,12 @@ function controlarRelay() {
   }
 }
 
-// ---------------- MONITORAMENTO DO RELAY ----------------
+// ---------------- MONITORAMENTO ----------------
 
 let lastUpdate = Date.now();
 
 setInterval(() => {
-  if (!relayLigado) return; // só monitora se estiver ligado
+  if (!relayLigado) return;
 
   fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
     if (err) return;
