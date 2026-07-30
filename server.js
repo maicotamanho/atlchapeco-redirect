@@ -33,6 +33,8 @@ setInterval(() => {
   }
 
   console.log("Ouvintes reais:", ouvintes.size);
+
+  controlarRelay(); // liga/desliga automaticamente
 }, 5000);
 
 // ---------------- SERVE HLS ----------------
@@ -45,10 +47,15 @@ app.get("/", (req, res) => {
 
 // ---------------- FFmpeg Relay ----------------
 
-function iniciarFFmpegRelay() {
-  console.log("Iniciando FFmpeg Relay...");
+let ffmpegRelay = null;
+let relayLigado = false;
 
-  const ffmpeg = spawn("ffmpeg", [
+function ligarRelay() {
+  if (relayLigado) return;
+
+  console.log("Ligando FFmpeg Relay (há ouvintes)...");
+
+  ffmpegRelay = spawn("ffmpeg", [
     "-reconnect", "1",
     "-reconnect_streamed", "1",
     "-reconnect_delay_max", "5",
@@ -66,7 +73,20 @@ function iniciarFFmpegRelay() {
     stdio: ["ignore", "ignore", "ignore"]
   });
 
-  ffmpeg.unref();
+  ffmpegRelay.unref();
+  relayLigado = true;
+}
+
+function desligarRelay() {
+  if (!relayLigado) return;
+
+  console.log("Desligando FFmpeg Relay (sem ouvintes)...");
+
+  try {
+    ffmpegRelay.kill("SIGKILL");
+  } catch (e) {}
+
+  relayLigado = false;
 }
 
 // ---------------- GRAVAÇÃO AUTOMÁTICA ----------------
@@ -106,40 +126,41 @@ function pararGravacao() {
   gravando = false;
 }
 
-// Checa ouvintes a cada 10s
-setInterval(() => {
+// ---------------- CONTROLE AUTOMÁTICO ----------------
+
+function controlarRelay() {
   if (ouvintes.size > 0) {
+    ligarRelay();
     iniciarGravacao();
   } else {
+    desligarRelay();
     pararGravacao();
   }
-}, 10000);
+}
 
 // ---------------- MONITORAMENTO DO RELAY ----------------
 
 let lastUpdate = Date.now();
 
-function monitorarHLS() {
-  setInterval(() => {
-    fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
-      if (err) return;
+setInterval(() => {
+  if (!relayLigado) return; // só monitora se estiver ligado
 
-      const modified = new Date(stats.mtime).getTime();
+  fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
+    if (err) return;
 
-      if (modified > lastUpdate) {
-        lastUpdate = modified;
-      } else {
-        console.log("HLS travado, reiniciando FFmpeg Relay...");
-        iniciarFFmpegRelay();
-      }
-    });
-  }, 10000);
-}
+    const modified = new Date(stats.mtime).getTime();
+
+    if (modified > lastUpdate) {
+      lastUpdate = modified;
+    } else {
+      console.log("HLS travado, reiniciando FFmpeg Relay...");
+      ligarRelay();
+    }
+  });
+}, 10000);
 
 // ---------------- INICIAR SERVIDOR ----------------
 
 app.listen(port, () => {
   console.log("Servidor rodando na porta", port);
-  iniciarFFmpegRelay();
-  monitorarHLS();
 });
