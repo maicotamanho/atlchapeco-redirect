@@ -3,41 +3,45 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 
 const app = express();
-const port = 3000;
+const port = 3000; // usando Dockerfile, porta fixa
 
 const HLS_DIR = "/app/hls";
 const RECORD_DIR = "/app/record";
 const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 
+// Cria pastas se não existirem
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 if (!fs.existsSync(RECORD_DIR)) fs.mkdirSync(RECORD_DIR, { recursive: true });
 
-// ---------------- OUVINTES ----------------
+// ---------------- OUVINTES POR IP ----------------
 
-let ouvintes = 0;
-let gravando = false;
-let ffmpegRecord = null;
+let ouvintes = new Map(); // ip -> timestamp da última requisição
 
-// Detecta acessos ao HLS
 app.use("/radio", (req, res, next) => {
-  ouvintes++;
-  console.log("Novo ouvinte conectado. Total:", ouvintes);
-
-  res.on("close", () => {
-    ouvintes--;
-    if (ouvintes < 0) ouvintes = 0;
-    console.log("Ouvinte saiu. Total:", ouvintes);
-  });
-
+  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  ouvintes.set(ip, Date.now());
   next();
 });
+
+// Remove ouvintes inativos
+setInterval(() => {
+  const agora = Date.now();
+
+  for (const [ip, last] of ouvintes.entries()) {
+    if (agora - last > 15000) { // 15s sem pedir ts = saiu
+      ouvintes.delete(ip);
+    }
+  }
+
+  console.log("Ouvintes reais:", ouvintes.size);
+}, 5000);
 
 // ---------------- SERVE HLS ----------------
 
 app.use("/radio", express.static(HLS_DIR));
 
 app.get("/", (req, res) => {
-  res.send("Relay da Rádio Atlântida Chapecó ativo! /radio/index.m3u8");
+  res.send("Relay da Rádio Atlântida Chapecó ativo! Acesse /radio/index.m3u8");
 });
 
 // ---------------- FFmpeg Relay ----------------
@@ -67,6 +71,9 @@ function iniciarFFmpegRelay() {
 }
 
 // ---------------- GRAVAÇÃO AUTOMÁTICA ----------------
+
+let gravando = false;
+let ffmpegRecord = null;
 
 function iniciarGravacao() {
   if (gravando) return;
@@ -102,7 +109,7 @@ function pararGravacao() {
 
 // Checa ouvintes a cada 10s
 setInterval(() => {
-  if (ouvintes > 0) {
+  if (ouvintes.size > 0) {
     iniciarGravacao();
   } else {
     pararGravacao();
