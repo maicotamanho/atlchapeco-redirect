@@ -25,6 +25,25 @@ function limparHLS() {
   }
 }
 
+// ---------------- PLACEHOLDER HLS ----------------
+
+function criarPlaceholder() {
+  const placeholder = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:4",
+    "#EXT-X-MEDIA-SEQUENCE:0",
+    "#EXT-X-ENDLIST"
+  ].join("\n");
+
+  try {
+    fs.writeFileSync(`${HLS_DIR}/index.m3u8`, placeholder);
+    console.log("Placeholder HLS criado.");
+  } catch (e) {
+    console.log("Erro ao criar placeholder HLS:", e);
+  }
+}
+
 // ---------------- OUVINTES POR USER-AGENT ----------------
 
 let ouvintes = new Map(); // userAgent -> timestamp
@@ -66,7 +85,8 @@ let relayLigado = false;
 function ligarRelay() {
   if (relayLigado) return;
 
-  limparHLS(); // evita tocar áudio antigo
+  limparHLS();
+  criarPlaceholder(); // evita erro na primeira tentativa
 
   console.log("Ligando FFmpeg Relay (há ouvintes)...");
 
@@ -79,10 +99,10 @@ function ligarRelay() {
     "-c:a", "aac",
     "-b:a", "128k",
     "-f", "hls",
-    "-hls_time", "4",                     // segmentos maiores
-    "-hls_list_size", "10",               // playlist mais estável
+    "-hls_time", "4",
+    "-hls_list_size", "10",
     "-hls_flags", "delete_segments+independent_segments",
-    "-max_reload", "1",                   // evita playlist vazia
+    "-max_reload", "1",
     `${HLS_DIR}/index.m3u8`
   ], {
     detached: true,
@@ -92,7 +112,6 @@ function ligarRelay() {
   ffmpegRelay.unref();
   relayLigado = true;
 
-  // Delay para FFmpeg gerar segmentos antes do player tocar
   setTimeout(() => {
     console.log("Relay estabilizado, HLS pronto.");
   }, 3000);
