@@ -3,34 +3,47 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 
 const app = express();
-const port = 3000; // usando Dockerfile, porta fixa
+const port = 3000;
 
 const HLS_DIR = "/app/hls";
+const RECORD_DIR = "/app/record";
 const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 
-// Garante que a pasta HLS existe
-if (!fs.existsSync(HLS_DIR)) {
-  fs.mkdirSync(HLS_DIR, { recursive: true });
-  console.log("Pasta /app/hls criada");
-}
+if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
+if (!fs.existsSync(RECORD_DIR)) fs.mkdirSync(RECORD_DIR, { recursive: true });
 
-// Servir HLS
+// ---------------- OUVINTES ----------------
+
+let ouvintes = 0;
+let gravando = false;
+let ffmpegRecord = null;
+
+// Detecta acessos ao HLS
+app.use("/radio", (req, res, next) => {
+  ouvintes++;
+  console.log("Novo ouvinte conectado. Total:", ouvintes);
+
+  res.on("close", () => {
+    ouvintes--;
+    if (ouvintes < 0) ouvintes = 0;
+    console.log("Ouvinte saiu. Total:", ouvintes);
+  });
+
+  next();
+});
+
+// ---------------- SERVE HLS ----------------
+
 app.use("/radio", express.static(HLS_DIR));
 
 app.get("/", (req, res) => {
-  res.send("Relay da Rádio Atlântida Chapecó está ativo! Acesse /radio/index.m3u8");
+  res.send("Relay da Rádio Atlântida Chapecó ativo! /radio/index.m3u8");
 });
 
-app.listen(port, () => {
-  console.log("Servidor rodando na porta", port);
-  iniciarFFmpeg();
-  iniciarMonitoramento();
-});
+// ---------------- FFmpeg Relay ----------------
 
-// ---------------- FFmpeg ----------------
-
-function iniciarFFmpeg() {
-  console.log("Iniciando FFmpeg em background...");
+function iniciarFFmpegRelay() {
+  console.log("Iniciando FFmpeg Relay...");
 
   const ffmpeg = spawn("ffmpeg", [
     "-reconnect", "1",
@@ -53,11 +66,54 @@ function iniciarFFmpeg() {
   ffmpeg.unref();
 }
 
-// ---------------- Monitoramento ----------------
+// ---------------- GRAVAÇÃO AUTOMÁTICA ----------------
+
+function iniciarGravacao() {
+  if (gravando) return;
+
+  console.log("Iniciando gravação (há ouvintes)...");
+
+  const filename = `${RECORD_DIR}/gravacao_${Date.now()}.aac`;
+
+  ffmpegRecord = spawn("ffmpeg", [
+    "-i", STREAM_URL,
+    "-c:a", "copy",
+    filename
+  ], {
+    detached: true,
+    stdio: ["ignore", "ignore", "ignore"]
+  });
+
+  ffmpegRecord.unref();
+  gravando = true;
+}
+
+function pararGravacao() {
+  if (!gravando) return;
+
+  console.log("Parando gravação (sem ouvintes)...");
+
+  try {
+    ffmpegRecord.kill("SIGKILL");
+  } catch (e) {}
+
+  gravando = false;
+}
+
+// Checa ouvintes a cada 10s
+setInterval(() => {
+  if (ouvintes > 0) {
+    iniciarGravacao();
+  } else {
+    pararGravacao();
+  }
+}, 10000);
+
+// ---------------- MONITORAMENTO DO RELAY ----------------
 
 let lastUpdate = Date.now();
 
-function iniciarMonitoramento() {
+function monitorarHLS() {
   setInterval(() => {
     fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
       if (err) return;
@@ -67,9 +123,17 @@ function iniciarMonitoramento() {
       if (modified > lastUpdate) {
         lastUpdate = modified;
       } else {
-        console.log("HLS parece travado, reiniciando FFmpeg...");
-        iniciarFFmpeg();
+        console.log("HLS travado, reiniciando FFmpeg Relay...");
+        iniciarFFmpegRelay();
       }
     });
   }, 10000);
 }
+
+// ---------------- INICIAR SERVIDOR ----------------
+
+app.listen(port, () => {
+  console.log("Servidor rodando na porta", port);
+  iniciarFFmpegRelay();
+  monitorarHLS();
+});
