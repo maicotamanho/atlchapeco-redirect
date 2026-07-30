@@ -1,7 +1,6 @@
 const express = require("express");
 const { spawn } = require("child_process");
 const fs = require("fs");
-const path = require("path");
 
 const app = express();
 const port = 3000;
@@ -13,61 +12,29 @@ const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 if (!fs.existsSync(RECORD_DIR)) fs.mkdirSync(RECORD_DIR, { recursive: true });
 
-// ---------------- SERVE HLS COM ANTI-CACHE + MIME CORRETO ----------------
+// ---------------- FFmpeg Relay SEMPRE LIGADO ----------------
 
-app.get("/radio/:file", async (req, res) => {
-  const file = req.params.file;
-  const fullPath = path.join(HLS_DIR, file);
-
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-
-  if (file.endsWith(".m3u8")) {
-    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
-  } else if (file.endsWith(".ts")) {
-    res.setHeader("Content-Type", "video/mp2t");
-  }
-
-  // Se o arquivo não existe ainda, esperar até existir
-  if (!fs.existsSync(fullPath)) {
-    console.log("Aguardando segmento:", file);
-
-    let tentativas = 0;
-    while (!fs.existsSync(fullPath) && tentativas < 50) {
-      await new Promise(r => setTimeout(r, 100));
-      tentativas++;
-    }
-  }
-
-  if (!fs.existsSync(fullPath)) {
-    return res.status(204).end(); // nunca retornar 404
-  }
-
-  fs.createReadStream(fullPath).pipe(res);
+let ffmpegRelay = spawn("ffmpeg", [
+  "-reconnect", "1",
+  "-reconnect_streamed", "1",
+  "-reconnect_delay_max", "5",
+  "-timeout", "5000000",
+  "-i", STREAM_URL,
+  "-c:a", "aac",
+  "-b:a", "128k",
+  "-f", "hls",
+  "-hls_time", "4",
+  "-hls_list_size", "10",
+  "-hls_flags", "delete_segments+independent_segments",
+  `${HLS_DIR}/index.m3u8`
+], {
+  detached: true,
+  stdio: ["ignore", "ignore", "ignore"]
 });
 
-// ---------------- PLACEHOLDER ----------------
+ffmpegRelay.unref();
 
-function criarPlaceholder() {
-  const placeholder = [
-    "#EXTM3U",
-    "#EXT-X-VERSION:3",
-    "#EXT-X-TARGETDURATION:4",
-    "#EXT-X-MEDIA-SEQUENCE:0",
-    "#EXT-X-ENDLIST"
-  ].join("\n");
-
-  fs.writeFileSync(`${HLS_DIR}/index.m3u8`, placeholder);
-}
-
-// ---------------- LIMPAR HLS ----------------
-
-function limparHLS() {
-  fs.readdirSync(HLS_DIR).forEach(f => {
-    fs.unlinkSync(`${HLS_DIR}/${f}`);
-  });
-}
+console.log("FFmpeg Relay iniciado e sempre ativo.");
 
 // ---------------- OUVINTES ----------------
 
@@ -79,64 +46,56 @@ app.use("/radio", (req, res, next) => {
   next();
 });
 
+// Remove ouvintes inativos
 setInterval(() => {
   const agora = Date.now();
   for (const [ua, last] of ouvintes.entries()) {
     if (agora - last > 15000) ouvintes.delete(ua);
   }
-  controlarRelay();
 }, 5000);
 
-// ---------------- RELAY ----------------
+// ---------------- GRAVAÇÃO AUTOMÁTICA ----------------
 
-let ffmpegRelay = null;
-let relayLigado = false;
+let gravando = false;
+let ffmpegRecord = null;
 
-function ligarRelay() {
-  if (relayLigado) return;
+function iniciarGravacao() {
+  if (gravando) return;
 
-  limparHLS();
-  criarPlaceholder();
+  console.log("Iniciando gravação (há ouvintes)...");
 
-  ffmpegRelay = spawn("ffmpeg", [
-    "-probesize", "10000000",
-    "-analyzeduration", "10000000",
-    "-fflags", "+discardcorrupt",
-    "-flush_packets", "1",
-    "-reconnect", "1",
-    "-reconnect_streamed", "1",
-    "-reconnect_delay_max", "5",
-    "-timeout", "5000000",
+  const filename = `${RECORD_DIR}/gravacao_${Date.now()}.aac`;
+
+  ffmpegRecord = spawn("ffmpeg", [
     "-i", STREAM_URL,
-    "-c:a", "aac",
-    "-b:a", "128k",
-    "-f", "hls",
-    "-hls_time", "4",
-    "-hls_list_size", "10",
-    "-hls_flags", "delete_segments+independent_segments",
-    "-max_reload", "1",
-    `${HLS_DIR}/index.m3u8`
+    "-c:a", "copy",
+    filename
   ], {
     detached: true,
     stdio: ["ignore", "ignore", "ignore"]
   });
 
-  ffmpegRelay.unref();
-  relayLigado = true;
+  ffmpegRecord.unref();
+  gravando = true;
 }
 
-function desligarRelay() {
-  if (!relayLigado) return;
-  try { ffmpegRelay.kill("SIGKILL"); } catch {}
-  relayLigado = false;
+function pararGravacao() {
+  if (!gravando) return;
+
+  console.log("Parando gravação (sem ouvintes)...");
+
+  try { ffmpegRecord.kill("SIGKILL"); } catch {}
+  gravando = false;
 }
 
-function controlarRelay() {
-  if (ouvintes.size > 0) ligarRelay();
-  else desligarRelay();
-}
+setInterval(() => {
+  if (ouvintes.size > 0) iniciarGravacao();
+  else pararGravacao();
+}, 5000);
 
-// ---------------- SERVIDOR ----------------
+// ---------------- SERVE HLS ----------------
+
+app.use("/radio", express.static(HLS_DIR));
 
 app.listen(port, () => {
   console.log("Servidor rodando na porta", port);
