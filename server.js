@@ -12,6 +12,19 @@ const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 if (!fs.existsSync(HLS_DIR)) fs.mkdirSync(HLS_DIR, { recursive: true });
 if (!fs.existsSync(RECORD_DIR)) fs.mkdirSync(RECORD_DIR, { recursive: true });
 
+// ---------------- LIMPAR HLS AO LIGAR ----------------
+
+function limparHLS() {
+  try {
+    fs.readdirSync(HLS_DIR).forEach(file => {
+      fs.unlinkSync(`${HLS_DIR}/${file}`);
+    });
+    console.log("HLS limpo antes de ligar o relay.");
+  } catch (e) {
+    console.log("Erro ao limpar HLS:", e);
+  }
+}
+
 // ---------------- OUVINTES POR USER-AGENT ----------------
 
 let ouvintes = new Map(); // userAgent -> timestamp
@@ -52,6 +65,8 @@ let relayLigado = false;
 
 function ligarRelay() {
   if (relayLigado) return;
+
+  limparHLS(); // <<< ESSENCIAL PARA NÃO TOCAR ÁUDIO ANTIGO
 
   console.log("Ligando FFmpeg Relay (há ouvintes)...");
 
