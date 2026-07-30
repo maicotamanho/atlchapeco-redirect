@@ -8,6 +8,7 @@ const port = 3000; // usando Dockerfile, porta fixa
 const HLS_DIR = "/app/hls";
 const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 
+// Garante que a pasta HLS existe
 if (!fs.existsSync(HLS_DIR)) {
   fs.mkdirSync(HLS_DIR, { recursive: true });
   console.log("Pasta /app/hls criada");
@@ -25,6 +26,8 @@ app.listen(port, () => {
   iniciarFFmpeg();
   iniciarMonitoramento();
 });
+
+// ---------------- FFmpeg ----------------
 
 function iniciarFFmpeg() {
   console.log("Iniciando FFmpeg em background...");
@@ -50,16 +53,23 @@ function iniciarFFmpeg() {
   ffmpeg.unref();
 }
 
-// Monitoramento do HLS para detectar travamento
+// ---------------- Monitoramento ----------------
+
 let lastUpdate = Date.now();
 
 function iniciarMonitoramento() {
   setInterval(() => {
     fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
-      if (err) {
-        return;
-      }
+      if (err) return;
 
       const modified = new Date(stats.mtime).getTime();
 
       if (modified > lastUpdate) {
+        lastUpdate = modified;
+      } else {
+        console.log("HLS parece travado, reiniciando FFmpeg...");
+        iniciarFFmpeg();
+      }
+    });
+  }, 10000);
+}
