@@ -3,16 +3,17 @@ const { spawn } = require("child_process");
 const fs = require("fs");
 
 const app = express();
-const port = 3000; // FIXO porque você usa Dockerfile
+const port = 3000; // usando Dockerfile, porta fixa
 
 const HLS_DIR = "/app/hls";
+const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
 
 if (!fs.existsSync(HLS_DIR)) {
   fs.mkdirSync(HLS_DIR, { recursive: true });
+  console.log("Pasta /app/hls criada");
 }
 
-const STREAM_URL = "https://24403.live.streamtheworld.com/ATL_CHAAAC.aac";
-
+// Servir HLS
 app.use("/radio", express.static(HLS_DIR));
 
 app.get("/", (req, res) => {
@@ -22,10 +23,17 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log("Servidor rodando na porta", port);
   iniciarFFmpeg();
+  iniciarMonitoramento();
 });
 
 function iniciarFFmpeg() {
+  console.log("Iniciando FFmpeg em background...");
+
   const ffmpeg = spawn("ffmpeg", [
+    "-reconnect", "1",
+    "-reconnect_streamed", "1",
+    "-reconnect_delay_max", "5",
+    "-timeout", "5000000",
     "-i", STREAM_URL,
     "-c:a", "aac",
     "-b:a", "128k",
@@ -41,3 +49,17 @@ function iniciarFFmpeg() {
 
   ffmpeg.unref();
 }
+
+// Monitoramento do HLS para detectar travamento
+let lastUpdate = Date.now();
+
+function iniciarMonitoramento() {
+  setInterval(() => {
+    fs.stat(`${HLS_DIR}/index.m3u8`, (err, stats) => {
+      if (err) {
+        return;
+      }
+
+      const modified = new Date(stats.mtime).getTime();
+
+      if (modified > lastUpdate) {
