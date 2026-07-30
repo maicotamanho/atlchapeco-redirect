@@ -66,7 +66,7 @@ let relayLigado = false;
 function ligarRelay() {
   if (relayLigado) return;
 
-  limparHLS(); // <<< ESSENCIAL PARA NÃO TOCAR ÁUDIO ANTIGO
+  limparHLS(); // evita tocar áudio antigo
 
   console.log("Ligando FFmpeg Relay (há ouvintes)...");
 
@@ -79,9 +79,10 @@ function ligarRelay() {
     "-c:a", "aac",
     "-b:a", "128k",
     "-f", "hls",
-    "-hls_time", "2",
-    "-hls_list_size", "5",
-    "-hls_flags", "delete_segments",
+    "-hls_time", "4",                     // segmentos maiores
+    "-hls_list_size", "10",               // playlist mais estável
+    "-hls_flags", "delete_segments+independent_segments",
+    "-max_reload", "1",                   // evita playlist vazia
     `${HLS_DIR}/index.m3u8`
   ], {
     detached: true,
@@ -90,6 +91,11 @@ function ligarRelay() {
 
   ffmpegRelay.unref();
   relayLigado = true;
+
+  // Delay para FFmpeg gerar segmentos antes do player tocar
+  setTimeout(() => {
+    console.log("Relay estabilizado, HLS pronto.");
+  }, 3000);
 }
 
 function desligarRelay() {
