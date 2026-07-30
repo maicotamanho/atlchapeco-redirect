@@ -91,8 +91,10 @@ function ligarRelay() {
   console.log("Ligando FFmpeg Relay (há ouvintes)...");
 
   ffmpegRelay = spawn("ffmpeg", [
-    "-probesize", "5000000",
-    "-analyzeduration", "5000000",
+    "-probesize", "10000000",
+    "-analyzeduration", "10000000",
+    "-fflags", "+discardcorrupt",
+    "-flush_packets", "1",
     "-reconnect", "1",
     "-reconnect_streamed", "1",
     "-reconnect_delay_max", "5",
@@ -116,7 +118,7 @@ function ligarRelay() {
 
   setTimeout(() => {
     console.log("Relay estabilizado, HLS pronto.");
-  }, 3000);
+  }, 4000);
 }
 
 function desligarRelay() {
