@@ -1,6 +1,7 @@
 const express = require("express");
 const { spawn } = require("child_process");
 const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const port = 3000;
@@ -35,6 +36,35 @@ let ffmpegRelay = spawn("ffmpeg", [
 ffmpegRelay.unref();
 
 console.log("FFmpeg Relay iniciado e sempre ativo.");
+
+// ---------------- SERVE HLS (SEM ESPERAR SEGMENTO) ----------------
+
+app.get("/radio/:file", (req, res) => {
+  const file = req.params.file;
+  const fullPath = path.join(HLS_DIR, file);
+
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
+  if (file.endsWith(".m3u8")) {
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+  } else if (file.endsWith(".ts")) {
+    res.setHeader("Content-Type", "video/mp2t");
+  }
+
+  if (!fs.existsSync(fullPath)) {
+    // Se o segmento não existe, retornar o último disponível
+    const files = fs.readdirSync(HLS_DIR).filter(f => f.endsWith(".ts"));
+    if (files.length > 0) {
+      const ultimo = files.sort().reverse()[0];
+      return res.sendFile(path.join(HLS_DIR, ultimo));
+    }
+    return res.status(204).end();
+  }
+
+  res.sendFile(fullPath);
+});
 
 // ---------------- OUVINTES ----------------
 
@@ -93,9 +123,7 @@ setInterval(() => {
   else pararGravacao();
 }, 5000);
 
-// ---------------- SERVE HLS ----------------
-
-app.use("/radio", express.static(HLS_DIR));
+// ---------------- SERVIDOR ----------------
 
 app.listen(port, () => {
   console.log("Servidor rodando na porta", port);
